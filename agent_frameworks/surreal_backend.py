@@ -7,6 +7,7 @@ owning product-specific data models.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -53,8 +54,7 @@ class SurrealRuntimeBackend:
     """Persistence boundary for runtime events.
 
     The in-memory list is retained as a development fallback. When
-    `SURREALDB_PERSIST_ENABLED=true`, this class is expected to persist events
-    to SurrealDB through the network client implementation.
+    `SURREALDB_PERSIST_ENABLED=true`, this class writes to SurrealDB.
     """
 
     def __init__(self, config: SurrealRuntimeConfig | None = None) -> None:
@@ -62,19 +62,17 @@ class SurrealRuntimeBackend:
         self._events: list[RuntimeEvent] = []
 
     def record_event(self, event: RuntimeEvent) -> RuntimeEvent:
-        """Record a runtime event.
-
-        Current behavior records an in-process copy. Durable network persistence
-        is enabled through the same interface in the next implementation step.
-        """
-
         self._events.append(event)
+        if self.config.persist_enabled:
+            asyncio.run(self._record_event_async(event))
         return event
 
     def list_recorded_events(self) -> list[RuntimeEvent]:
         return list(self._events)
 
     def list_events_for_task(self, task_id: str) -> list[RuntimeEvent]:
+        if self.config.persist_enabled:
+            return asyncio.run(self._list_events_for_task_async(task_id))
         return [event for event in self._events if event.task_id == task_id]
 
     def to_surreal_record(self, event: RuntimeEvent) -> dict[str, Any]:
@@ -82,3 +80,37 @@ class SurrealRuntimeBackend:
 
     def runtime_events_table(self) -> str:
         return "runtime_events"
+
+    async def _connect(self):
+        from surrealdb import Surreal
+
+        db = Surreal(self.config.url)
+        await db.connect()
+        await db.signin({"username": self.config.username, "password": self.config.password})
+        await db.use(self.config.namespace, self.config.database)
+        return db
+
+    async def _record_event_async(self, event: RuntimeEvent) -> None:
+        db = await self._connect()
+        try:
+            await db.create(self.runtime_events_table(), self.to_surreal_record(event))
+        finally:
+            await db.close()
+
+    async def _list_events_for_task_async(self, task_id: str) -> list[RuntimeEvent]:
+        db = await self._connect()
+        try:
+            rows = await db.query(
+                "SELECT * FROM runtime_events WHERE task_id = $task_id ORDER BY created_at ASC;",
+                {"task_id": task_id},
+            )
+        finally:
+            await db.close()
+
+        result = rows[0].get("result", []) if rows else []
+        return [RuntimeEvent(**self._clean_surreal_row(row)) for row in result]
+
+    def _clean_surreal_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        row = dict(row)
+        row.pop("id", None)
+        return row
