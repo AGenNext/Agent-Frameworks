@@ -7,6 +7,7 @@ owning product-specific data models.
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -20,6 +21,18 @@ class SurrealRuntimeConfig:
     database: str = "agent_platform"
     username: str = "root"
     password: str = "root"
+    persist_enabled: bool = False
+
+    @classmethod
+    def from_env(cls) -> "SurrealRuntimeConfig":
+        return cls(
+            url=os.getenv("SURREALDB_URL", "ws://localhost:8000/rpc"),
+            namespace=os.getenv("SURREALDB_NAMESPACE", "agent_platform"),
+            database=os.getenv("SURREALDB_DATABASE", "agent_platform"),
+            username=os.getenv("SURREALDB_USERNAME", "root"),
+            password=os.getenv("SURREALDB_PASSWORD", "root"),
+            persist_enabled=os.getenv("SURREALDB_PERSIST_ENABLED", "false").lower() == "true",
+        )
 
 
 @dataclass
@@ -39,19 +52,20 @@ class RuntimeEvent:
 class SurrealRuntimeBackend:
     """Persistence boundary for runtime events.
 
-    The actual network client is kept lazy so tests and local smoke runs can use
-    this class without requiring SurrealDB to be available.
+    The in-memory list is retained as a development fallback. When
+    `SURREALDB_PERSIST_ENABLED=true`, this class is expected to persist events
+    to SurrealDB through the network client implementation.
     """
 
     def __init__(self, config: SurrealRuntimeConfig | None = None) -> None:
-        self.config = config or SurrealRuntimeConfig()
+        self.config = config or SurrealRuntimeConfig.from_env()
         self._events: list[RuntimeEvent] = []
 
     def record_event(self, event: RuntimeEvent) -> RuntimeEvent:
         """Record a runtime event.
 
-        Current implementation stores an in-process copy and provides the stable
-        interface that will be backed by SurrealDB network writes next.
+        Current behavior records an in-process copy. Durable network persistence
+        is enabled through the same interface in the next implementation step.
         """
 
         self._events.append(event)
@@ -65,3 +79,6 @@ class SurrealRuntimeBackend:
 
     def to_surreal_record(self, event: RuntimeEvent) -> dict[str, Any]:
         return asdict(event)
+
+    def runtime_events_table(self) -> str:
+        return "runtime_events"
