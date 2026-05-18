@@ -38,6 +38,14 @@ class TrustResult:
 
 
 @dataclass
+class FinOpsResult:
+    status: str
+    estimated_cost_usd: float
+    budget_status: str
+    summary: str
+
+
+@dataclass
 class RuntimeResult:
     task_id: str
     ready_for_human_review: bool
@@ -45,6 +53,7 @@ class RuntimeResult:
     metadata: dict[str, Any]
     evaluation: EvaluationResult
     trust: TrustResult
+    finops: FinOpsResult
 
 
 class LangGraphRuntime:
@@ -86,6 +95,12 @@ class LangGraphRuntime:
             score=0.75 if result.ready_for_human_review else 0.0,
             summary="Baseline trust derived from traceable runtime events and agent responses.",
         )
+        finops = FinOpsResult(
+            status="estimated",
+            estimated_cost_usd=0.0,
+            budget_status="within_budget",
+            summary="Baseline FinOps estimate for local/open-source runtime path.",
+        )
 
         runtime_result = RuntimeResult(
             task_id=request.task_id,
@@ -94,6 +109,7 @@ class LangGraphRuntime:
             metadata=request.metadata or {},
             evaluation=evaluation,
             trust=trust,
+            finops=finops,
         )
 
         self.backend.record_event(
@@ -114,6 +130,20 @@ class LangGraphRuntime:
                 scope=request.scope,
                 status=trust.status,
                 metadata={"score": trust.score, "summary": trust.summary},
+            )
+        )
+        self.backend.record_event(
+            RuntimeEvent(
+                event_type="finops.completed",
+                task_id=request.task_id,
+                objective=request.objective,
+                scope=request.scope,
+                status=finops.status,
+                metadata={
+                    "estimated_cost_usd": finops.estimated_cost_usd,
+                    "budget_status": finops.budget_status,
+                    "summary": finops.summary,
+                },
             )
         )
         self.backend.record_event(
