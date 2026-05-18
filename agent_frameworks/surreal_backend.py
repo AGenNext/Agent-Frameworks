@@ -43,6 +43,14 @@ class RuntimeEvent:
     task_id: str | None = None
     objective: str | None = None
     scope: str | None = None
+    agent_id: str | None = None
+    loop_id: str | None = None
+    iteration: int | None = None
+    exchange_id: str | None = None
+    parent_event_id: str | None = None
+    handoff_id: str | None = None
+    source_agent: str | None = None
+    target_agent: str | None = None
     status: str | None = None
     ready_for_human_review: bool | None = None
     response_count: int | None = None
@@ -74,6 +82,13 @@ class SurrealRuntimeBackend:
         if self.config.persist_enabled:
             return asyncio.run(self._list_events_for_task_async(task_id))
         return [event for event in self._events if event.task_id == task_id]
+
+    def list_events_for_loop(self, task_id: str, loop_id: str) -> list[RuntimeEvent]:
+        return [
+            event
+            for event in self.list_events_for_task(task_id)
+            if event.loop_id == loop_id
+        ]
 
     def to_surreal_record(self, event: RuntimeEvent) -> dict[str, Any]:
         return asdict(event)
