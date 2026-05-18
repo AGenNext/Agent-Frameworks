@@ -12,6 +12,8 @@ from typing import Any
 from agent_team.orchestrator import ProjectManagerOrchestrator
 from agent_team.registry import build_bootstrapped_team_registry
 
+from agent_frameworks.surreal_backend import RuntimeEvent, SurrealRuntimeBackend
+
 
 @dataclass
 class RuntimeRequest:
@@ -39,17 +41,43 @@ class LangGraphRuntime:
     def __init__(self) -> None:
         registry = build_bootstrapped_team_registry()
         self.orchestrator = ProjectManagerOrchestrator(registry)
+        self.backend = SurrealRuntimeBackend()
 
     def run(self, request: RuntimeRequest) -> RuntimeResult:
+        self.backend.record_event(
+            RuntimeEvent(
+                event_type="runtime.started",
+                task_id=request.task_id,
+                objective=request.objective,
+                scope=request.scope,
+                metadata=request.metadata or {},
+            )
+        )
+
         result = self.orchestrator.run_plan(
             task_id=request.task_id,
             objective=request.objective,
             scope=request.scope,
         )
 
-        return RuntimeResult(
+        runtime_result = RuntimeResult(
             task_id=request.task_id,
             ready_for_human_review=result.ready_for_human_review,
             response_count=len(result.responses),
             metadata=request.metadata or {},
         )
+
+        self.backend.record_event(
+            RuntimeEvent(
+                event_type="runtime.completed",
+                task_id=request.task_id,
+                objective=request.objective,
+                scope=request.scope,
+                status="completed",
+                ready_for_human_review=runtime_result.ready_for_human_review,
+                response_count=runtime_result.response_count,
+                metadata=runtime_result.metadata,
+            )
+        )
+
+        return runtime_result
