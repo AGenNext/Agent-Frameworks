@@ -60,5 +60,8 @@ class SurrealRuntimeBackend:
     def list_recorded_events(self) -> list[RuntimeEvent]:
         return list(self._events)
 
+    def list_events_for_task(self, task_id: str) -> list[RuntimeEvent]:
+        return [event for event in self._events if event.task_id == task_id]
+
     def to_surreal_record(self, event: RuntimeEvent) -> dict[str, Any]:
         return asdict(event)
