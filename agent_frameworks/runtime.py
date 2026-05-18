@@ -24,11 +24,27 @@ class RuntimeRequest:
 
 
 @dataclass
+class EvaluationResult:
+    status: str
+    score: float
+    summary: str
+
+
+@dataclass
+class TrustResult:
+    status: str
+    score: float
+    summary: str
+
+
+@dataclass
 class RuntimeResult:
     task_id: str
     ready_for_human_review: bool
     response_count: int
     metadata: dict[str, Any]
+    evaluation: EvaluationResult
+    trust: TrustResult
 
 
 class LangGraphRuntime:
@@ -60,13 +76,46 @@ class LangGraphRuntime:
             scope=request.scope,
         )
 
+        evaluation = EvaluationResult(
+            status="passed" if result.ready_for_human_review else "blocked",
+            score=1.0 if result.ready_for_human_review else 0.0,
+            summary="Baseline evaluation derived from internal agent consensus.",
+        )
+        trust = TrustResult(
+            status="conditional_trust" if result.ready_for_human_review else "untrusted",
+            score=0.75 if result.ready_for_human_review else 0.0,
+            summary="Baseline trust derived from traceable runtime events and agent responses.",
+        )
+
         runtime_result = RuntimeResult(
             task_id=request.task_id,
             ready_for_human_review=result.ready_for_human_review,
             response_count=len(result.responses),
             metadata=request.metadata or {},
+            evaluation=evaluation,
+            trust=trust,
         )
 
+        self.backend.record_event(
+            RuntimeEvent(
+                event_type="evaluation.completed",
+                task_id=request.task_id,
+                objective=request.objective,
+                scope=request.scope,
+                status=evaluation.status,
+                metadata={"score": evaluation.score, "summary": evaluation.summary},
+            )
+        )
+        self.backend.record_event(
+            RuntimeEvent(
+                event_type="trust.completed",
+                task_id=request.task_id,
+                objective=request.objective,
+                scope=request.scope,
+                status=trust.status,
+                metadata={"score": trust.score, "summary": trust.summary},
+            )
+        )
         self.backend.record_event(
             RuntimeEvent(
                 event_type="runtime.completed",
