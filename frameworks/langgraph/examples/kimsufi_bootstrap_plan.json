@@ -1,0 +1,48 @@
+{
+  "id": "bootstrap_kimsufi_microcloud",
+  "runtime_profile": "k8smicro",
+  "nodes": [
+    {
+      "id": "verify_identity",
+      "action": "identity.verify",
+      "input": {
+        "actor_did": "did:web:example.com:user:chinmay"
+      }
+    },
+    {
+      "id": "harden_node",
+      "action": "linux.harden",
+      "input": {
+        "target": "server:kimsufi-eco-01"
+      }
+    },
+    {
+      "id": "install_k3s",
+      "action": "k3s.install",
+      "input": {
+        "target": "server:kimsufi-eco-01"
+      }
+    },
+    {
+      "id": "deploy_surrealdb",
+      "action": "surrealdb.deploy",
+      "input": {
+        "namespace": "cloud-architect-agents"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "verify_identity",
+      "to": "harden_node"
+    },
+    {
+      "from": "harden_node",
+      "to": "install_k3s"
+    },
+    {
+      "from": "install_k3s",
+      "to": "deploy_surrealdb"
+    }
+  ]
+}
